@@ -100,7 +100,9 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'amvera' && <AmveraExportModal botState={botState} />}
+        {activeTab === 'amvera' && (
+          <AmveraExportModal botState={botState} onUpdateState={handleUpdateState} />
+        )}
       </main>
 
       {/* Telegram Connection Modal */}

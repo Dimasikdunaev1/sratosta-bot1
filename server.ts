@@ -1,5 +1,7 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
+import { exec } from 'child_process';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
@@ -315,6 +317,73 @@ app.post('/api/telegram/send-test', async (req, res) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ----------------- GITHUB & EXPORT API ----------------- //
+
+// Push to GitHub repository directly
+app.post('/api/git/push', async (req, res) => {
+  const { repoUrl, personalAccessToken } = req.body;
+  if (!repoUrl) {
+    return res.status(400).json({
+      error: 'Укажите URL репозитория на GitHub (например, https://github.com/dimasikdunaev1/sratosta-bot.git)',
+    });
+  }
+
+  let cleanUrl = repoUrl.trim();
+  if (cleanUrl.endsWith('/')) cleanUrl = cleanUrl.slice(0, -1);
+  if (!cleanUrl.endsWith('.git')) cleanUrl += '.git';
+
+  let pushUrl = cleanUrl;
+  if (personalAccessToken && cleanUrl.startsWith('https://')) {
+    const withoutHttps = cleanUrl.replace('https://', '');
+    pushUrl = `https://${personalAccessToken.trim()}@${withoutHttps}`;
+  }
+
+  // Ensure git changes are committed
+  exec('git add . && git commit -m "update: latest changes for Sratosta bot" 2>/dev/null || true', () => {
+    // Set remote origin
+    exec('git remote remove origin 2>/dev/null || true', () => {
+      exec(`git remote add origin "${cleanUrl}"`, (addErr) => {
+        if (addErr) {
+          console.error('[Git remote error]', addErr);
+        }
+        // Run git push
+        exec(`git push -u "${pushUrl}" main --force`, (pushErr, stdout, stderr) => {
+          if (pushErr) {
+            let errorText = stderr || stdout || pushErr.message;
+            if (personalAccessToken) {
+              errorText = errorText.split(personalAccessToken.trim()).join('***');
+            }
+            return res.status(500).json({ error: errorText });
+          }
+
+          res.json({
+            success: true,
+            message: `🎉 Все файлы успешно загружены в ваш репозиторий GitHub: ${cleanUrl}! Теперь вы можете подключить его к Amvera.`,
+          });
+        });
+      });
+    });
+  });
+});
+
+// Download full repository archive (tar.gz)
+app.get('/api/export/archive', (_req, res) => {
+  const archivePath = path.join(__dirname, 'sratosta-bot-full.tar.gz');
+  exec(
+    'tar -czf sratosta-bot-full.tar.gz --exclude="node_modules" --exclude="dist" .',
+    (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Ошибка создания архива репозитория' });
+      }
+      res.download(archivePath, 'sratosta-bot-full.tar.gz', () => {
+        try {
+          fs.unlinkSync(archivePath);
+        } catch {}
+      });
+    }
+  );
 });
 
 // Telegram Polling Runner
